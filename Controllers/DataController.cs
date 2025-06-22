@@ -2,6 +2,7 @@ using EspDataServer.Data;
 using EspDataServer.Models;
 
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace EspDataServer.Controllers;
 
@@ -32,14 +33,29 @@ public class DataController : ControllerBase
     }
     
     [HttpGet("latest")]
-    public IActionResult Latest(int count = 20)
+    public async Task<IActionResult> Latest(int count = 20, CancellationToken cancellationToken = default)
     {
-        var data = _context.SensorReadings
+        var data = await _context.SensorReadings
                            .OrderByDescending(d => d.Timestamp)
                            .Take(count)
                            .OrderBy(d => d.Timestamp)
-                           .ToList();
+                           .ToListAsync(cancellationToken);
 
         return Ok(data);
+    }
+    
+    [HttpGet("all")]
+    public async Task<IActionResult> All()
+    {
+        var data = await _context.SensorReadings.ToListAsync();
+        return Ok(data);
+    }
+    
+    [HttpDelete]
+    public async Task<IActionResult> Clear()
+    {
+        _context.SensorReadings.RemoveRange(_context.SensorReadings);
+        await _context.SaveChangesAsync();
+        return Ok();
     }
 }

@@ -1,4 +1,4 @@
-namespace EspDataServer.Controllers;
+namespace EspDataServer.Models;
 
 public class DataInfo
 {

@@ -3,21 +3,13 @@
 }
 <h2>График температуры и влажности</h2>
 
-<button type="button" class="btn btn-primary" onclick="fetchDeleteData()">Удалить</button>
-
 <canvas id="chart" width="800" height="400"></canvas>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script>    
-    async function fetchDeleteData() {
-        await fetch("/api/data", {
-            method: "DELETE"});
-    }
-</script>
 <script>
     let chart;
     async function fetchDataAndUpdate() {
-        const response = await fetch("/api/data/latest?count=20");
+        const response = await fetch("/api/data/All");
         const data = await response.json();
 
         const labels = data.map(x => new Date(x.timestamp).toLocaleTimeString());
@@ -61,7 +53,5 @@
             chart.update();
         }
     }
-
-    setInterval(fetchDataAndUpdate, 5000);
     fetchDataAndUpdate();
 </script>

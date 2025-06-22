@@ -5,6 +5,8 @@ using EspDataServer.Data;
 using Microsoft.AspNetCore.Mvc;
 using EspDataServer.Models;
 
+using Microsoft.EntityFrameworkCore;
+
 namespace EspDataServer.Controllers;
 
 public class HomeController : Controller
@@ -16,12 +18,21 @@ public class HomeController : Controller
         _context = context;
     }
 
-    public IActionResult Index()
+    public async Task<IActionResult> Index(CancellationToken cancellationToken = default)
     {
-        var data = _context.SensorReadings
-                           .OrderByDescending(d => d.Timestamp)
-                           .Take(50)
-                           .ToList();
+        var data = await _context.SensorReadings
+                                 .OrderByDescending(d => d.Timestamp)
+                                 .Take(50)
+                                 .ToListAsync(cancellationToken);
+
+        return View(data);
+    }
+
+    public async Task<IActionResult> All(CancellationToken cancellationToken = default)
+    {
+        var data = await _context.SensorReadings
+                                 .OrderByDescending(d => d.Timestamp)
+                                 .ToListAsync(cancellationToken);
 
         return View(data);
     }

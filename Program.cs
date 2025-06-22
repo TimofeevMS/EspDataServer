@@ -20,7 +20,7 @@ app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
     c.SwaggerEndpoint("/swagger/v1/swagger.json", "ESP Data API v1");
-    c.RoutePrefix = "swagger"; // Swagger доступен по /swagger
+    c.RoutePrefix = "swagger";
 });
 app.UseStaticFiles();
 app.UseRouting();

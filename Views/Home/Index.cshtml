@@ -1,35 +1,58 @@
-﻿@model List<EspDataServer.Models.SensorData>
-@{
-    ViewData["Title"] = "График с ESP8266";
+﻿@{
+    ViewData["Title"] = "Реальный график ESP8266";
 }
-
-<h2>Последние данные с ESP</h2>
+<h2>График температуры и влажности</h2>
 <canvas id="chart" width="800" height="400"></canvas>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-    const labels = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(Model.Select(x => x.Timestamp.ToString("HH:mm:ss"))));
-    const temperatures = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(Model.Select(x => x.Temperature)));
-    const humidity = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(Model.Select(x => x.Humidity)));
+    let chart;
+    async function fetchDataAndUpdate() {
+        const response = await fetch("/api/data/latest?count=20");
+        const data = await response.json();
 
-    new Chart(document.getElementById('chart'), {
-        type: 'line',
-        data: {
-            labels: labels,
-            datasets: [
-                {
-                    label: 'Температура (°C)',
-                    data: temperatures,
-                    borderColor: 'red',
-                    fill: false
+        const labels = data.map(x => new Date(x.timestamp).toLocaleTimeString());
+        const temperatures = data.map(x => x.temperature);
+        const humidities = data.map(x => x.humidity);
+
+        if (!chart) {
+            chart = new Chart(document.getElementById('chart'), {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Температура (°C)',
+                            data: temperatures,
+                            borderColor: 'red',
+                            fill: false
+                        },
+                        {
+                            label: 'Влажность (%)',
+                            data: humidities,
+                            borderColor: 'blue',
+                            fill: false
+                        }
+                    ]
                 },
-                {
-                    label: 'Влажность (%)',
-                    data: humidity,
-                    borderColor: 'blue',
-                    fill: false
+                options: {
+                    responsive: true,
+                    animation: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
                 }
-            ]
+            });
+        } else {
+            chart.data.labels = labels;
+            chart.data.datasets[0].data = temperatures;
+            chart.data.datasets[1].data = humidities;
+            chart.update();
         }
-    });
+    }
+
+    setInterval(fetchDataAndUpdate, 5000);
+    fetchDataAndUpdate();
 </script>

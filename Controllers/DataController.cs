@@ -24,4 +24,16 @@ public class DataController : ControllerBase
         await _context.SaveChangesAsync();
         return Ok(new { status = "saved" });
     }
+    
+    [HttpGet("latest")]
+    public IActionResult Latest(int count = 20)
+    {
+        var data = _context.SensorReadings
+                           .OrderByDescending(d => d.Timestamp)
+                           .Take(count)
+                           .OrderBy(d => d.Timestamp)
+                           .ToList();
+
+        return Ok(data);
+    }
 }

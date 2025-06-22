@@ -1,23 +1,38 @@
 ﻿@{
-    ViewData["Title"] = "График ESP8266";
+    ViewData["Title"] = "График по дате";
 }
 <h2>График температуры и влажности</h2>
 
-<button type="button" class="btn btn-primary" onclick="fetchDeleteData()">Удалить</button>
+<div class="mb-3 row">
+    <div class="col-md-3">
+        <label>Дата</label>
+        <input type="date" id="datePicker" class="form-control" value="@DateTime.UtcNow.ToString("yyyy-MM-dd")">
+    </div>
+    <div class="col-md-3">
+        <label>Количество точек</label>
+        <select id="pointCount" class="form-control">
+            <option value="20">20</option>
+            <option value="50" selected>50</option>
+            <option value="100">100</option>
+            <option value="0">Все</option>
+        </select>
+    </div>
+    <div class="col-md-3 d-flex align-items-end">
+        <button class="btn btn-primary" onclick="loadGraph()">Показать</button>
+    </div>
+</div>
 
 <canvas id="chart" width="800" height="400"></canvas>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script>    
-    async function fetchDeleteData() {
-        await fetch("/api/data", {
-            method: "DELETE"});
-    }
-</script>
 <script>
     let chart;
-    async function fetchDataAndUpdate() {
-        const response = await fetch("/api/data/latest?count=20");
+
+    async function loadGraph() {
+        const date = document.getElementById("datePicker").value;
+        const count = document.getElementById("pointCount").value;
+
+        const response = await fetch(`/api/data/bydate?date=${date}&count=${count}`);
         const data = await response.json();
 
         const labels = data.map(x => new Date(x.timestamp).toLocaleTimeString());
@@ -62,6 +77,5 @@
         }
     }
 
-    setInterval(fetchDataAndUpdate, 5000);
-    fetchDataAndUpdate();
+    window.onload = loadGraph;
 </script>

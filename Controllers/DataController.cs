@@ -44,6 +44,24 @@ public class DataController : ControllerBase
         return Ok(data);
     }
     
+    [HttpGet("bydate")]
+    public IActionResult ByDate(DateTime date, int count = 50)
+    {
+        var start = date.Date;
+        var end = start.AddDays(1);
+
+        var data = _context.SensorReadings
+                           .Where(d => d.Timestamp >= start && d.Timestamp < end)
+                           .OrderByDescending(d => d.Timestamp);
+
+        if (count > 0)
+            data = (IOrderedQueryable<SensorData>)data.Take(count);
+
+        var list = data.OrderBy(d => d.Timestamp).ToList();
+
+        return Ok(list);
+    }
+    
     [HttpGet("all")]
     public async Task<IActionResult> All()
     {

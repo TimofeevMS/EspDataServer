@@ -4,18 +4,12 @@ using Microsoft.EntityFrameworkCore;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-builder.Services.AddDbContext<AppDbContext>(options =>
-                                                options.UseSqlite("Data Source=espdata.db"));
+builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlite("Data Source=espdata.db"));
 
 builder.Services.AddControllersWithViews();
 
 var app = builder.Build();
 
-using (var scope = app.Services.CreateScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.Migrate();
-}
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {

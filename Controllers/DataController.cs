@@ -17,10 +17,16 @@ public class DataController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<IActionResult> Post([FromBody] SensorData data)
+    public async Task<IActionResult> Post([FromBody] DataInfo data)
     {
-        data.Timestamp = DateTime.UtcNow;
-        _context.SensorReadings.Add(data);
+        var sensorDate = new SensorData()
+        {
+            Temperature = data.Temperature,
+            Humidity = data.Humidity,
+            Timestamp = DateTime.UtcNow,
+        };
+        
+        _context.SensorReadings.Add(sensorDate);
         await _context.SaveChangesAsync();
         return Ok(new { status = "saved" });
     }

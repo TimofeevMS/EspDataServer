@@ -1,0 +1,35 @@
+﻿@model List<EspDataServer.Models.SensorData>
+@{
+    ViewData["Title"] = "График с ESP8266";
+}
+
+<h2>Последние данные с ESP</h2>
+<canvas id="chart" width="800" height="400"></canvas>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    const labels = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(Model.Select(x => x.Timestamp.ToString("HH:mm:ss"))));
+    const temperatures = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(Model.Select(x => x.Temperature)));
+    const humidity = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(Model.Select(x => x.Humidity)));
+
+    new Chart(document.getElementById('chart'), {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'Температура (°C)',
+                    data: temperatures,
+                    borderColor: 'red',
+                    fill: false
+                },
+                {
+                    label: 'Влажность (%)',
+                    data: humidity,
+                    borderColor: 'blue',
+                    fill: false
+                }
+            ]
+        }
+    });
+</script>

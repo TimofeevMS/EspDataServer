@@ -46,6 +46,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
     let chart;
+    let updateInterval;
 
     async function loadGraph() {
         let url;
@@ -61,48 +62,55 @@
             url = `/api/data/byrange?start=${start}&end=${end}`;
         }
 
-        const response = await fetch(url);
-        const data = await response.json();
+        try {
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const data = await response.json();
 
-        const labels = data.map(x => new Date(x.timestamp).toLocaleString());
-        const temperatures = data.map(x => x.temperature);
-        const humidities = data.map(x => x.humidity);
+            const labels = data.map(x => new Date(x.timestamp).toLocaleString());
+            const temperatures = data.map(x => x.temperature);
+            const humidities = data.map(x => x.humidity);
 
-        if (!chart) {
-            chart = new Chart(document.getElementById('chart'), {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [
-                        {
-                            label: 'Температура (°C)',
-                            data: temperatures,
-                            borderColor: 'red',
-                            fill: false
-                        },
-                        {
-                            label: 'Влажность (%)',
-                            data: humidities,
-                            borderColor: 'blue',
-                            fill: false
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    animation: false,
-                    scales: {
-                        y: {
-                            beginAtZero: true
+            if (!chart) {
+                chart = new Chart(document.getElementById('chart'), {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            {
+                                label: 'Температура (°C)',
+                                data: temperatures,
+                                borderColor: 'red',
+                                fill: false
+                            },
+                            {
+                                label: 'Влажность (%)',
+                                data: humidities,
+                                borderColor: 'blue',
+                                fill: false
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        animation: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true
+                            }
                         }
                     }
-                }
-            });
-        } else {
-            chart.data.labels = labels;
-            chart.data.datasets[0].data = temperatures;
-            chart.data.datasets[1].data = humidities;
-            chart.update();
+                });
+            } else {
+                chart.data.labels = labels;
+                chart.data.datasets[0].data = temperatures;
+                chart.data.datasets[1].data = humidities;
+                chart.update();
+            }
+        } catch (error) {
+            console.error('Error fetching data:', error);
         }
     }
 
@@ -110,6 +118,8 @@
         const mode = document.querySelector('input[name="mode"]:checked').value;
         document.getElementById('dayControls').style.display = mode === 'day' ? 'flex' : 'none';
         document.getElementById('rangeControls').style.display = mode === 'range' ? 'flex' : 'none';
+        clearInterval(updateInterval);
+        updateInterval = setInterval(loadGraph, 2000);
         loadGraph();
     }
 
@@ -117,12 +127,36 @@
         radio.addEventListener('change', toggleControls);
     });
 
-    document.getElementById('dayPicker').addEventListener('change', loadGraph);
-    document.getElementById('interval').addEventListener('change', loadGraph);
-    document.getElementById('startDateTime').addEventListener('change', loadGraph);
-    document.getElementById('endDateTime').addEventListener('change', loadGraph);
+    document.getElementById('dayPicker').addEventListener('change', () => {
+        clearInterval(updateInterval);
+        updateInterval = setInterval(loadGraph, 2000);
+        loadGraph();
+    });
+
+    document.getElementById('interval').addEventListener('change', () => {
+        clearInterval(updateInterval);
+        updateInterval = setInterval(loadGraph, 2000);
+        loadGraph();
+    });
+
+    document.getElementById('startDateTime').addEventListener('change', () => {
+        clearInterval(updateInterval);
+        updateInterval = setInterval(loadGraph, 2000);
+        loadGraph();
+    });
+
+    document.getElementById('endDateTime').addEventListener('change', () => {
+        clearInterval(updateInterval);
+        updateInterval = setInterval(loadGraph, 2000);
+        loadGraph();
+    });
 
     window.onload = () => {
+        updateInterval = setInterval(loadGraph, 2000);
         toggleControls();
+    };
+
+    window.onunload = () => {
+        clearInterval(updateInterval);
     };
 </script>

@@ -53,29 +53,31 @@ public class DataController : ControllerBase
 
         var endDate = date.AddDays(1);
 
-        var query = _context.SensorReadings
-                            .Where(d => d.Timestamp >= date && d.Timestamp < endDate)
-                            .OrderBy(d => d.Timestamp);
+        var rawData = await _context.SensorReadings
+                                    .Where(d => d.Timestamp >= date && d.Timestamp < endDate)
+                                    .OrderBy(d => d.Timestamp)
+                                    .ToListAsync(cancellationToken);
 
-        var data = await query
-                        .GroupBy(d => new
-                         {
-                             Timestamp = DateTime.SpecifyKind(new DateTime(d.Timestamp.Year,
-                                                                           d.Timestamp.Month,
-                                                                           d.Timestamp.Day,
-                                                                           d.Timestamp.Hour,
-                                                                           d.Timestamp.Minute -
-                                                                           (d.Timestamp.Minute % interval),
-                                                                           0),
-                                                              DateTimeKind.Utc)
-                         })
-                        .Select(g => new
-                         {
-                             Timestamp = g.Key.Timestamp,
-                             Temperature = g.Average(x => x.Temperature),
-                             Humidity = g.Average(x => x.Humidity)
-                         })
-                        .ToListAsync(cancellationToken);
+        var data = rawData
+                  .GroupBy(d => new
+                   {
+                       Timestamp = DateTime.SpecifyKind(
+                                                        new DateTime(d.Timestamp.Year,
+                                                                     d.Timestamp.Month,
+                                                                     d.Timestamp.Day,
+                                                                     d.Timestamp.Hour,
+                                                                     d.Timestamp.Minute - (d.Timestamp.Minute % interval),
+                                                                     0),
+                                                        DateTimeKind.Utc),
+                   })
+                  .Select(g => new
+                   {
+                       Timestamp = g.Key.Timestamp,
+                       Temperature = g.Average(x => x.Temperature),
+                       Humidity = g.Average(x => x.Humidity)
+                   })
+                  .OrderBy(g => g.Timestamp)
+                  .ToList();
 
         return Ok(data);
     }

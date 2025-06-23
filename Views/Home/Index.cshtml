@@ -1,131 +1,394 @@
 ﻿@{
-    ViewData["Title"] = "График температуры и влажности";
+    ViewData["Title"] = "Мониторинг климата";
 }
-<h2>График температуры и влажности</h2>
 
-<div class="mb-3 row">
-    <div class="col-md-3">
-        <label>Начало периода</label>
-        <input type="datetime-local" id="startDateTime" class="form-control" value="@DateTime.UtcNow.AddHours(-24).ToString("yyyy-MM-ddTHH:mm")">
-    </div>
-    <div class="col-md-3">
-        <label>Конец периода</label>
-        <input type="datetime-local" id="endDateTime" class="form-control" value="@DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm")">
-    </div>
-    <div class="col-md-3">
-        <label>Интервал</label>
-        <select id="interval" class="form-control">
-            <option value="0">Без агрегации</option>
-            <option value="1">1 минута</option>
-            <option value="5" selected>5 минут</option>
-            <option value="30">30 минут</option>
-            <option value="60">60 минут</option>
-        </select>
-    </div>
-    <div class="col-md-3 d-flex align-items-end">
-        <button id="autoUpdateBtn" class="btn btn-primary">Включить автообновление</button>
-    </div>
+<h1 class="mb-3">Мониторинг климата</h1>
+
+<!-- Форма фильтрации -->
+<div class="mb-3">
+    <form id="filterForm" class="row g-2 align-items-end">
+        <div class="col-auto">
+            <label for="minutes" class="form-label">Быстрая фильтрация:</label>
+            <select class="form-select" id="minutes" name="minutes">
+                <option value="">Выберите интервал</option>
+                <option value="1">1 минута</option>
+                <option value="5">5 минут</option>
+                <option value="30">30 минут</option>
+                <option value="60">1 час</option>
+            </select>
+        </div>
+
+        <div class="col-auto">
+            <label for="from" class="form-label">С:</label>
+            <input type="datetime-local" name="from" id="from" class="form-control" />
+        </div>
+        <div class="col-auto">
+            <label for="to" class="form-label">До:</label>
+            <input type="datetime-local" name="to" id="to" class="form-control" />
+        </div>
+
+        <div class="col-auto">
+            <button type="submit" class="btn btn-primary">Применить</button>
+        </div>
+    </form>
 </div>
 
-<canvas id="chart" width="800" height="400"></canvas>
+<!-- Последние показания -->
+<div id="latestInfo" class="alert alert-info d-none"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script>
-    let chart;
-    let autoUpdateInterval = null;
+<!-- Кнопка автообновления -->
+<div class="d-flex justify-content-between align-items-center mb-2">
+    <h5>График показателей</h5>
+    <button id="autoRefreshBtn" class="btn btn-outline-success">Автообновление: выкл</button>
+</div>
 
-    async function loadGraph() {
-        const start = document.getElementById('startDateTime').value;
-        const end = document.getElementById('endDateTime').value;
-        const interval = document.getElementById('interval').value;
+<canvas id="sensorChart" height="100"></canvas>
 
-        if (!start || !end) {
-            console.warn('Выберите даты');
-            return;
-        }
+<hr />
 
-        if (new Date(start) >= new Date(end)) {
-            console.warn('Дата начала должна быть раньше даты конца');
-            return;
-        }
+<h5>История показаний</h5>
+<table class="table table-sm table-striped">
+    <thead class="table-light">
+    <tr>
+        <th>Время</th>
+        <th>Температура (°C)</th>
+        <th>Влажность (%)</th>
+    </tr>
+    </thead>
+    <tbody id="dataBody"></tbody>
+</table>
 
-        const url = `/api/data?start=${start}&end=${end}&interval=${interval}`;
+@section Scripts {
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        let autoRefresh = false;
+        let intervalId = null;
+        let chart = null;
 
-        try {
-            const response = await fetch(url);
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
+        document.getElementById("autoRefreshBtn").addEventListener("click", () => {
+            autoRefresh = !autoRefresh;
+            const btn = document.getElementById("autoRefreshBtn");
+            btn.classList.toggle("btn-outline-success", !autoRefresh);
+            btn.classList.toggle("btn-outline-danger", autoRefresh);
+            btn.textContent = "Автообновление: " + (autoRefresh ? "вкл" : "выкл");
+
+            if (autoRefresh) {
+                intervalId = setInterval(loadData, 10000);
+            } else {
+                clearInterval(intervalId);
             }
-            const data = await response.json();
+        });
 
-            const labels = data.map(x => new Date(x.timestamp).toLocaleString());
-            const temperatures = data.map(x => x.temperature);
-            const humidities = data.map(x => x.humidity);
+        document.getElementById("filterForm").addEventListener("submit", function (e) {
+            e.preventDefault();
+            loadData();
+        });
 
-            if (!chart) {
-                chart = new Chart(document.getElementById('chart'), {
-                    type: 'line',
-                    data: {
-                        labels: labels,
-                        datasets: [
-                            {
-                                label: 'Температура (°C)',
-                                data: temperatures,
-                                borderColor: 'red',
-                                fill: false
-                            },
-                            {
-                                label: 'Влажность (%)',
-                                data: humidities,
-                                borderColor: 'blue',
-                                fill: false
-                            }
-                        ]
+        function loadData() {
+            const minutes = document.getElementById("minutes").value;
+            const from = document.getElementById("from").value;
+            const to = document.getElementById("to").value;
+
+            const params = new URLSearchParams();
+            if (minutes) params.append("minutes", minutes);
+            if (from && to) {
+                params.append("from", from);
+                params.append("to", to);
+            }
+
+            fetch(`/Sensor/GetSensorData?${params.toString()}`)
+                .then(res => res.json())
+                .then(data => {
+                    updateTable(data);
+                    updateChart(data);
+                    updateInfo(data);
+                });
+        }
+
+        function updateTable(data) {
+            const tbody = document.getElementById("dataBody");
+            tbody.innerHTML = "";
+            data.slice().reverse().forEach(d => {
+                const row = `<tr>
+                    <td>${new Date(d.timestamp).toLocaleString()}</td>
+                    <td>${d.temperature}</td>
+                    <td>${d.humidity}</td>
+                </tr>`;
+                tbody.insertAdjacentHTML("beforeend", row);
+            });
+        }
+
+        function updateChart(data) {
+            const labels = data.map(d => new Date(d.timestamp).toLocaleTimeString());
+            const temperatures = data.map(d => d.temperature);
+            const humidities = data.map(d => d.humidity);
+
+            if (chart) chart.destroy();
+
+            chart = new Chart(document.getElementById('sensorChart'), {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Температура (°C)',
+                            data: temperatures,
+                            borderColor: 'rgba(255, 99, 132, 1)',
+                            backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                            yAxisID: 'y1',
+                            tension: 0.3
+                        },
+                        {
+                            label: 'Влажность (%)',
+                            data: humidities,
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                            yAxisID: 'y2',
+                            tension: 0.3
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
                     },
-                    options: {
-                        responsive: true,
-                        animation: false,
-                        scales: {
-                            y: {
-                                beginAtZero: true
-                            }
+                    stacked: false,
+                    scales: {
+                        y1: {
+                            type: 'linear',
+                            position: 'left',
+                            title: { display: true, text: 'Температура (°C)' },
+                            beginAtZero: false
+                        },
+                        y2: {
+                            type: 'linear',
+                            position: 'right',
+                            title: { display: true, text: 'Влажность (%)' },
+                            beginAtZero: true,
+                            grid: { drawOnChartArea: false }
                         }
                     }
-                });
-            } else {
-                chart.data.labels = labels;
-                chart.data.datasets[0].data = temperatures;
-                chart.data.datasets[1].data = humidities;
-                chart.update();
+                }
+            });
+        }
+
+        function updateInfo(data) {
+            const latest = data[data.length - 1];
+            const info = document.getElementById("latestInfo");
+
+            if (!latest) {
+                info.classList.add("d-none");
+                return;
             }
-        } catch (error) {
-            console.error('Ошибка загрузки данных:', error);
-        }
-    }
 
-    function toggleAutoUpdate() {
-        const btn = document.getElementById('autoUpdateBtn');
-        if (autoUpdateInterval) {
-            clearInterval(autoUpdateInterval);
-            autoUpdateInterval = null;
-            btn.textContent = 'Включить автообновление';
-        } else {
-            autoUpdateInterval = setInterval(loadGraph, 2000);
-            btn.textContent = 'Выключить автообновление';
-            loadGraph();
+            info.classList.remove("d-none");
+            info.innerHTML = `
+                <strong>Последнее обновление:</strong> ${new Date(latest.timestamp).toLocaleString()}<br />
+                <strong>Температура:</strong> ${latest.temperature} °C |
+                <strong>Влажность:</strong> ${latest.humidity} %
+            `;
         }
-    }
 
-    // Обработчики событий
-    document.getElementById('startDateTime').addEventListener('change', loadGraph);
-    document.getElementById('endDateTime').addEventListener('change', loadGraph);
-    document.getElementById('interval').addEventListener('change', loadGraph);
-    document.getElementById('autoUpdateBtn').addEventListener('click', toggleAutoUpdate);
+        // Начальная загрузка
+        loadData();
+    </script>
+}
+@{
+    ViewData["Title"] = "Мониторинг климата";
+}
 
-    window.onload = loadGraph;
-    window.onunload = () => {
-        if (autoUpdateInterval) {
-            clearInterval(autoUpdateInterval);
+<h1 class="mb-3">Мониторинг климата</h1>
+
+<!-- Форма фильтрации -->
+<div class="mb-3">
+    <form id="filterForm" class="row g-2 align-items-end">
+        <div class="col-auto">
+            <label for="minutes" class="form-label">Быстрая фильтрация:</label>
+            <select class="form-select" id="minutes" name="minutes">
+                <option value="">Выберите интервал</option>
+                <option value="1">1 минута</option>
+                <option value="5">5 минут</option>
+                <option value="30">30 минут</option>
+                <option value="60">1 час</option>
+            </select>
+        </div>
+
+        <div class="col-auto">
+            <label for="from" class="form-label">С:</label>
+            <input type="datetime-local" name="from" id="from" class="form-control" />
+        </div>
+        <div class="col-auto">
+            <label for="to" class="form-label">До:</label>
+            <input type="datetime-local" name="to" id="to" class="form-control" />
+        </div>
+
+        <div class="col-auto">
+            <button type="submit" class="btn btn-primary">Применить</button>
+        </div>
+    </form>
+</div>
+
+<!-- Последние показания -->
+<div id="latestInfo" class="alert alert-info d-none"></div>
+
+<!-- Кнопка автообновления -->
+<div class="d-flex justify-content-between align-items-center mb-2">
+    <h5>График показателей</h5>
+    <button id="autoRefreshBtn" class="btn btn-outline-success">Автообновление: выкл</button>
+</div>
+
+<canvas id="sensorChart" height="100"></canvas>
+
+<hr />
+
+<h5>История показаний</h5>
+<table class="table table-sm table-striped">
+    <thead class="table-light">
+        <tr>
+            <th>Время</th>
+            <th>Температура (°C)</th>
+            <th>Влажность (%)</th>
+        </tr>
+    </thead>
+    <tbody id="dataBody"></tbody>
+</table>
+
+@section Scripts {
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        let autoRefresh = false;
+        let intervalId = null;
+        let chart = null;
+
+        document.getElementById("autoRefreshBtn").addEventListener("click", () => {
+            autoRefresh = !autoRefresh;
+            const btn = document.getElementById("autoRefreshBtn");
+            btn.classList.toggle("btn-outline-success", !autoRefresh);
+            btn.classList.toggle("btn-outline-danger", autoRefresh);
+            btn.textContent = "Автообновление: " + (autoRefresh ? "вкл" : "выкл");
+
+            if (autoRefresh) {
+                intervalId = setInterval(loadData, 10000);
+            } else {
+                clearInterval(intervalId);
+            }
+        });
+
+        document.getElementById("filterForm").addEventListener("submit", function (e) {
+            e.preventDefault();
+            loadData();
+        });
+
+        function loadData() {
+            const minutes = document.getElementById("minutes").value;
+            const from = document.getElementById("from").value;
+            const to = document.getElementById("to").value;
+
+            const params = new URLSearchParams();
+            if (minutes) params.append("minutes", minutes);
+            if (from && to) {
+                params.append("from", from);
+                params.append("to", to);
+            }
+
+            fetch(`/Sensor/GetSensorData?${params.toString()}`)
+                .then(res => res.json())
+                .then(data => {
+                    updateTable(data);
+                    updateChart(data);
+                    updateInfo(data);
+                });
         }
-    };
-</script>
+
+        function updateTable(data) {
+            const tbody = document.getElementById("dataBody");
+            tbody.innerHTML = "";
+            data.slice().reverse().forEach(d => {
+                const row = `<tr>
+                    <td>${new Date(d.timestamp).toLocaleString()}</td>
+                    <td>${d.temperature}</td>
+                    <td>${d.humidity}</td>
+                </tr>`;
+                tbody.insertAdjacentHTML("beforeend", row);
+            });
+        }
+
+        function updateChart(data) {
+            const labels = data.map(d => new Date(d.timestamp).toLocaleTimeString());
+            const temperatures = data.map(d => d.temperature);
+            const humidities = data.map(d => d.humidity);
+
+            if (chart) chart.destroy();
+
+            chart = new Chart(document.getElementById('sensorChart'), {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Температура (°C)',
+                            data: temperatures,
+                            borderColor: 'rgba(255, 99, 132, 1)',
+                            backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                            yAxisID: 'y1',
+                            tension: 0.3
+                        },
+                        {
+                            label: 'Влажность (%)',
+                            data: humidities,
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                            yAxisID: 'y2',
+                            tension: 0.3
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    stacked: false,
+                    scales: {
+                        y1: {
+                            type: 'linear',
+                            position: 'left',
+                            title: { display: true, text: 'Температура (°C)' },
+                            beginAtZero: false
+                        },
+                        y2: {
+                            type: 'linear',
+                            position: 'right',
+                            title: { display: true, text: 'Влажность (%)' },
+                            beginAtZero: true,
+                            grid: { drawOnChartArea: false }
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateInfo(data) {
+            const latest = data[data.length - 1];
+            const info = document.getElementById("latestInfo");
+
+            if (!latest) {
+                info.classList.add("d-none");
+                return;
+            }
+
+            info.classList.remove("d-none");
+            info.innerHTML = `
+                <strong>Последнее обновление:</strong> ${new Date(latest.timestamp).toLocaleString()}<br />
+                <strong>Температура:</strong> ${latest.temperature} °C |
+                <strong>Влажность:</strong> ${latest.humidity} %
+            `;
+        }
+
+        // Начальная загрузка
+        loadData();
+    </script>
+}

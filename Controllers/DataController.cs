@@ -31,79 +31,35 @@ public class DataController : ControllerBase
         await _context.SaveChangesAsync();
         return Ok();
     }
-    
+
     [HttpGet]
-    [HttpGet]
-    public async Task<IActionResult> GetData([FromQuery] DateTime start,
-                                             [FromQuery] DateTime end,
-                                             [FromQuery] int interval = 0,
-                                             CancellationToken cancellationToken = default)
+    public async Task<IActionResult> GetSensorData(DateTime? from = null, DateTime? to = null, int? minutes = null,
+                                                   CancellationToken cancellationToken = default)
     {
-        // Ensure UTC kind
-        start = DateTime.SpecifyKind(start, DateTimeKind.Utc);
-        end = DateTime.SpecifyKind(end, DateTimeKind.Utc);
+        var now = DateTime.Now;
+        IQueryable<SensorData> query = _context.SensorReadings;
 
-        // Validate inputs
-        if (start >= end)
+        if (minutes.HasValue)
         {
-            return BadRequest("Дата начала должна быть раньше даты конца");
+            var since = now.AddMinutes(-minutes.Value);
+            query = query.Where(d => d.Timestamp >= since);
         }
-        if (interval is < 0 or > 60)
+        else if (from.HasValue && to.HasValue)
         {
-            return BadRequest("Интервал должен быть от 0 до 60 минут");
-        }
-
-        // Restrict range to prevent overloading
-        if ((end - start).TotalDays > 7)
-        {
-            return BadRequest("Диапазон не должен превышать 7 дней");
+            query = query.Where(d => d.Timestamp >= from && d.Timestamp <= to);
         }
 
-        if (interval == 0)
-        {
-            // Без агрегации: возвращаем все данные
-            var data = await _context.SensorReadings
-                .Where(d => d.Timestamp >= start && d.Timestamp <= end)
-                .Select(d => new
-                {
-                    d.Timestamp,
-                    d.Temperature,
-                    d.Humidity
-                })
-                .OrderBy(d => d.Timestamp)
-                .Take(10000) // Ограничение на 10,000 записей для защиты
-                .ToListAsync(cancellationToken);
+        var data = await query
+                        .OrderBy(d => d.Timestamp)
+                        .Take(1000)
+                        .Select(d => new
+                         {
+                             timestamp = d.Timestamp,
+                             temperature = d.Temperature,
+                             humidity = d.Humidity
+                         })
+                        .ToListAsync(cancellationToken);
 
-            return Ok(data);
-        }
-        else
-        {
-            // Агрегация по интервалу с использованием raw SQL
-            var query = @"
-                SELECT 
-                    strftime('%Y-%m-%d %H:%M:00', Timestamp, 'start of minute', 
-                             '-' || (strftime('%M', Timestamp) % @p0) || ' minutes') AS Timestamp,
-                    AVG(Temperature) AS Temperature,
-                    AVG(Humidity) AS Humidity
-                FROM SensorReadings
-                WHERE Timestamp >= @p1 AND Timestamp <= @p2
-                GROUP BY 
-                    strftime('%Y-%m-%d %H:%M:00', Timestamp, 'start of minute', 
-                             '-' || (strftime('%M', Timestamp) % @p0) || ' minutes')
-                ORDER BY Timestamp";
-
-            var data = await _context.Database
-                .SqlQueryRaw<SensorDataDto>(query, interval, start, end)
-                .ToListAsync(cancellationToken);
-
-            return Ok(data);
-        }
-    }
-    
-    private class SensorDataDto
-    {
-        public DateTime Timestamp { get; set; }
-        public double Temperature { get; set; }
-        public double Humidity { get; set; }
+        return Ok(data);
     }
 }

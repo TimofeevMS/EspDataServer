@@ -3,22 +3,41 @@
 }
 <h2>График температуры и влажности</h2>
 
-<div class="mb-3 row">
+<div class="mb-3">
+    <div class="form-check form-check-inline">
+        <input class="form-check-input" type="radio" name="mode" id="dayMode" value="day" checked>
+        <label class="form-check-label" for="dayMode">Режим дня</label>
+    </div>
+    <div class="form-check form-check-inline">
+        <input class="form-check-input" type="radio" name="mode" id="rangeMode" value="range">
+        <label class="form-check-label" for="rangeMode">Режим периода</label>
+    </div>
+</div>
+
+<div id="dayControls" class="mb-3 row">
     <div class="col-md-3">
         <label>Дата</label>
-        <input type="date" id="datePicker" class="form-control" value="@DateTime.UtcNow.ToString("yyyy-MM-dd")">
+        <input type="date" id="dayPicker" class="form-control" value="@DateTime.UtcNow.ToString("yyyy-MM-dd")">
     </div>
     <div class="col-md-3">
-        <label>Количество точек</label>
-        <select id="pointCount" class="form-control">
-            <option value="20">20</option>
-            <option value="50" selected>50</option>
-            <option value="100">100</option>
-            <option value="0">Все</option>
+        <label>Интервал</label>
+        <select id="interval" class="form-control">
+            <option value="1">1 минута</option>
+            <option value="5" selected>5 минут</option>
+            <option value="30">30 минут</option>
+            <option value="60">60 минут</option>
         </select>
     </div>
-    <div class="col-md-3 d-flex align-items-end">
-        <button class="btn btn-primary" onclick="loadGraph()">Показать</button>
+</div>
+
+<div id="rangeControls" class="mb-3 row" style="display: none;">
+    <div class="col-md-3">
+        <label>Начало</label>
+        <input type="datetime-local" id="startDateTime" class="form-control" value="@DateTime.UtcNow.AddHours(-24).ToString("yyyy-MM-ddTHH:mm")">
+    </div>
+    <div class="col-md-3">
+        <label>Конец</label>
+        <input type="datetime-local" id="endDateTime" class="form-control" value="@DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm")">
     </div>
 </div>
 
@@ -29,13 +48,23 @@
     let chart;
 
     async function loadGraph() {
-        const date = document.getElementById("datePicker").value;
-        const count = document.getElementById("pointCount").value;
+        let url;
+        const mode = document.querySelector('input[name="mode"]:checked').value;
 
-        const response = await fetch(`/api/data/bydate?date=${date}&count=${count}`);
+        if (mode === 'day') {
+            const date = document.getElementById('dayPicker').value;
+            const interval = document.getElementById('interval').value;
+            url = `/api/data/bydate?date=${date}&interval=${interval}`;
+        } else {
+            const start = document.getElementById('startDateTime').value;
+            const end = document.getElementById('endDateTime').value;
+            url = `/api/data/byrange?start=${start}&end=${end}`;
+        }
+
+        const response = await fetch(url);
         const data = await response.json();
 
-        const labels = data.map(x => new Date(x.timestamp).toLocaleTimeString());
+        const labels = data.map(x => new Date(x.timestamp).toLocaleString());
         const temperatures = data.map(x => x.temperature);
         const humidities = data.map(x => x.humidity);
 
@@ -77,5 +106,23 @@
         }
     }
 
-    window.onload = loadGraph;
+    function toggleControls() {
+        const mode = document.querySelector('input[name="mode"]:checked').value;
+        document.getElementById('dayControls').style.display = mode === 'day' ? 'flex' : 'none';
+        document.getElementById('rangeControls').style.display = mode === 'range' ? 'flex' : 'none';
+        loadGraph();
+    }
+
+    document.querySelectorAll('input[name="mode"]').forEach(radio => {
+        radio.addEventListener('change', toggleControls);
+    });
+
+    document.getElementById('dayPicker').addEventListener('change', loadGraph);
+    document.getElementById('interval').addEventListener('change', loadGraph);
+    document.getElementById('startDateTime').addEventListener('change', loadGraph);
+    document.getElementById('endDateTime').addEventListener('change', loadGraph);
+
+    window.onload = () => {
+        toggleControls();
+    };
 </script>

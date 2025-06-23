@@ -93,10 +93,17 @@ public class DataController : ControllerBase
                 ORDER BY Timestamp";
 
             var data = await _context.Database
-                .SqlQueryRaw<SensorData>(query, interval, start, end)
+                .SqlQueryRaw<SensorDataDto>(query, interval, start, end)
                 .ToListAsync(cancellationToken);
 
             return Ok(data);
         }
+    }
+    
+    private class SensorDataDto
+    {
+        public DateTime Timestamp { get; set; }
+        public double Temperature { get; set; }
+        public double Humidity { get; set; }
     }
 }

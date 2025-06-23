@@ -32,89 +32,68 @@ public class DataController : ControllerBase
         return Ok(new { status = "saved" });
     }
     
-    [HttpGet("latest")]
-    public async Task<IActionResult> Latest(int count = 20, CancellationToken cancellationToken = default)
+    [HttpGet]
+    public async Task<IActionResult> GetData(
+        [FromQuery] DateTime start,
+        [FromQuery] DateTime end,
+        [FromQuery] int interval = 0,
+        CancellationToken cancellationToken = default)
     {
-        var data = await _context.SensorReadings
-                           .OrderByDescending(d => d.Timestamp)
-                           .Take(count)
-                           .OrderBy(d => d.Timestamp)
-                           .ToListAsync(cancellationToken);
+        // Ensure UTC kind
+        start = DateTime.SpecifyKind(start, DateTimeKind.Utc);
+        end = DateTime.SpecifyKind(end, DateTimeKind.Utc);
 
-        return Ok(data);
-    }
-
-    [HttpGet("bydate")]
-    public async Task<IActionResult> ByDate([FromQuery] DateTime date,
-                                            [FromQuery] int interval = 5,
-                                            CancellationToken cancellationToken = default)
-    {
-        date = date.Date;
-
-        var endDate = date.AddDays(1);
-
-        var rawData = await _context.SensorReadings
-                                    .Where(d => d.Timestamp >= date && d.Timestamp < endDate)
-                                    .OrderBy(d => d.Timestamp)
-                                    .ToListAsync(cancellationToken);
-
-        var data = rawData
-                  .GroupBy(d => new
-                   {
-                       Timestamp = DateTime.SpecifyKind(
-                                                        new DateTime(d.Timestamp.Year,
-                                                                     d.Timestamp.Month,
-                                                                     d.Timestamp.Day,
-                                                                     d.Timestamp.Hour,
-                                                                     d.Timestamp.Minute - (d.Timestamp.Minute % interval),
-                                                                     0),
-                                                        DateTimeKind.Utc),
-                   })
-                  .Select(g => new
-                   {
-                       Timestamp = g.Key.Timestamp,
-                       Temperature = g.Average(x => x.Temperature),
-                       Humidity = g.Average(x => x.Humidity)
-                   })
-                  .OrderBy(g => g.Timestamp)
-                  .ToList();
-
-        return Ok(data);
-    }
-
-    [HttpGet("byrange")]
-    public async Task<IActionResult> ByRange([FromQuery] DateTime startDateTime,
-                                             [FromQuery] DateTime endDateTime,
-                                             CancellationToken cancellationToken = default)
-    {
-        startDateTime = DateTime.SpecifyKind(startDateTime, DateTimeKind.Utc);
-        endDateTime = DateTime.SpecifyKind(endDateTime, DateTimeKind.Utc);
-
-        if (startDateTime >= endDateTime)
+        // Validate inputs
+        if (start >= end)
         {
-            return BadRequest("End date must be after start date");
+            return BadRequest("Дата начала должна быть раньше даты конца");
+        }
+        if (interval is < 0 or > 60)
+        {
+            return BadRequest("Интервал должен быть от 0 до 60 минут");
         }
 
-        var data = await _context.SensorReadings
-                                 .Where(d => d.Timestamp >= startDateTime && d.Timestamp <= endDateTime)
-                                 .OrderBy(d => d.Timestamp)
-                                 .ToListAsync(cancellationToken);
+        IQueryable<object> query;
 
-        return Ok(data);
-    }
+        if (interval == 0)
+        {
+            // Без агрегации: возвращаем все данные
+            query = _context.SensorReadings
+                .Where(d => d.Timestamp >= start && d.Timestamp <= end)
+                .Select(d => new
+                {
+                    d.Timestamp,
+                    d.Temperature,
+                    d.Humidity
+                })
+                .OrderBy(d => d.Timestamp);
+        }
+        else
+        {
+            // С агрегацией по интервалу
+            query = _context.SensorReadings
+                .Where(d => d.Timestamp >= start && d.Timestamp <= end)
+                .GroupBy(d => new
+                {
+                    Timestamp = new DateTime(
+                        d.Timestamp.Year,
+                        d.Timestamp.Month,
+                        d.Timestamp.Day,
+                        d.Timestamp.Hour,
+                        (d.Timestamp.Minute / interval) * interval,
+                        0,
+                        DateTimeKind.Utc)
+                })
+                .Select(g => new
+                {
+                    Timestamp = g.Key.Timestamp,
+                    Temperature = g.Average(x => x.Temperature),
+                    Humidity = g.Average(x => x.Humidity)
+                })
+                .OrderBy(g => g.Timestamp);
+        }
 
-    [HttpGet("all")]
-    public async Task<IActionResult> All()
-    {
-        var data = await _context.SensorReadings.ToListAsync();
+        var data = await query.ToListAsync(cancellationToken);
         return Ok(data);
-    }
-    
-    [HttpDelete]
-    public async Task<IActionResult> Clear()
-    {
-        _context.SensorReadings.RemoveRange(_context.SensorReadings);
-        await _context.SaveChangesAsync();
-        return Ok();
     }
 }

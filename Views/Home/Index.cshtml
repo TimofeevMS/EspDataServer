@@ -1,43 +1,29 @@
 ﻿@{
-    ViewData["Title"] = "График по дате";
+    ViewData["Title"] = "График температуры и влажности";
 }
 <h2>График температуры и влажности</h2>
 
-<div class="mb-3">
-    <div class="form-check form-check-inline">
-        <input class="form-check-input" type="radio" name="mode" id="dayMode" value="day" checked>
-        <label class="form-check-label" for="dayMode">Режим дня</label>
-    </div>
-    <div class="form-check form-check-inline">
-        <input class="form-check-input" type="radio" name="mode" id="rangeMode" value="range">
-        <label class="form-check-label" for="rangeMode">Режим периода</label>
-    </div>
-</div>
-
-<div id="dayControls" class="mb-3 row">
+<div class="mb-3 row">
     <div class="col-md-3">
-        <label>Дата</label>
-        <input type="date" id="dayPicker" class="form-control" value="@DateTime.UtcNow.ToString("yyyy-MM-dd")">
+        <label>Начало периода</label>
+        <input type="datetime-local" id="startDateTime" class="form-control" value="@DateTime.UtcNow.AddHours(-24).ToString("yyyy-MM-ddTHH:mm")">
+    </div>
+    <div class="col-md-3">
+        <label>Конец периода</label>
+        <input type="datetime-local" id="endDateTime" class="form-control" value="@DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm")">
     </div>
     <div class="col-md-3">
         <label>Интервал</label>
         <select id="interval" class="form-control">
+            <option value="0">Без агрегации</option>
             <option value="1">1 минута</option>
             <option value="5" selected>5 минут</option>
             <option value="30">30 минут</option>
             <option value="60">60 минут</option>
         </select>
     </div>
-</div>
-
-<div id="rangeControls" class="mb-3 row" style="display: none;">
-    <div class="col-md-3">
-        <label>Начало</label>
-        <input type="datetime-local" id="startDateTime" class="form-control" value="@DateTime.UtcNow.AddHours(-24).ToString("yyyy-MM-ddTHH:mm")">
-    </div>
-    <div class="col-md-3">
-        <label>Конец</label>
-        <input type="datetime-local" id="endDateTime" class="form-control" value="@DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm")">
+    <div class="col-md-3 d-flex align-items-end">
+        <button id="autoUpdateBtn" class="btn btn-primary">Включить автообновление</button>
     </div>
 </div>
 
@@ -46,21 +32,24 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
     let chart;
-    let updateInterval;
+    let autoUpdateInterval = null;
 
     async function loadGraph() {
-        let url;
-        const mode = document.querySelector('input[name="mode"]:checked').value;
+        const start = document.getElementById('startDateTime').value;
+        const end = document.getElementById('endDateTime').value;
+        const interval = document.getElementById('interval').value;
 
-        if (mode === 'day') {
-            const date = document.getElementById('dayPicker').value;
-            const interval = document.getElementById('interval').value;
-            url = `/api/data/bydate?date=${date}&interval=${interval}`;
-        } else {
-            const start = document.getElementById('startDateTime').value;
-            const end = document.getElementById('endDateTime').value;
-            url = `/api/data/byrange?start=${start}&end=${end}`;
+        if (!start || !end) {
+            console.warn('Выберите даты');
+            return;
         }
+
+        if (new Date(start) >= new Date(end)) {
+            console.warn('Дата начала должна быть раньше даты конца');
+            return;
+        }
+
+        const url = `/api/data?start=${start}&end=${end}&interval=${interval}`;
 
         try {
             const response = await fetch(url);
@@ -110,53 +99,33 @@
                 chart.update();
             }
         } catch (error) {
-            console.error('Error fetching data:', error);
+            console.error('Ошибка загрузки данных:', error);
         }
     }
 
-    function toggleControls() {
-        const mode = document.querySelector('input[name="mode"]:checked').value;
-        document.getElementById('dayControls').style.display = mode === 'day' ? 'flex' : 'none';
-        document.getElementById('rangeControls').style.display = mode === 'range' ? 'flex' : 'none';
-        clearInterval(updateInterval);
-        updateInterval = setInterval(loadGraph, 2000);
-        loadGraph();
+    function toggleAutoUpdate() {
+        const btn = document.getElementById('autoUpdateBtn');
+        if (autoUpdateInterval) {
+            clearInterval(autoUpdateInterval);
+            autoUpdateInterval = null;
+            btn.textContent = 'Включить автообновление';
+        } else {
+            autoUpdateInterval = setInterval(loadGraph, 2000);
+            btn.textContent = 'Выключить автообновление';
+            loadGraph();
+        }
     }
 
-    document.querySelectorAll('input[name="mode"]').forEach(radio => {
-        radio.addEventListener('change', toggleControls);
-    });
+    // Обработчики событий
+    document.getElementById('startDateTime').addEventListener('change', loadGraph);
+    document.getElementById('endDateTime').addEventListener('change', loadGraph);
+    document.getElementById('interval').addEventListener('change', loadGraph);
+    document.getElementById('autoUpdateBtn').addEventListener('click', toggleAutoUpdate);
 
-    document.getElementById('dayPicker').addEventListener('change', () => {
-        clearInterval(updateInterval);
-        updateInterval = setInterval(loadGraph, 2000);
-        loadGraph();
-    });
-
-    document.getElementById('interval').addEventListener('change', () => {
-        clearInterval(updateInterval);
-        updateInterval = setInterval(loadGraph, 2000);
-        loadGraph();
-    });
-
-    document.getElementById('startDateTime').addEventListener('change', () => {
-        clearInterval(updateInterval);
-        updateInterval = setInterval(loadGraph, 2000);
-        loadGraph();
-    });
-
-    document.getElementById('endDateTime').addEventListener('change', () => {
-        clearInterval(updateInterval);
-        updateInterval = setInterval(loadGraph, 2000);
-        loadGraph();
-    });
-
-    window.onload = () => {
-        updateInterval = setInterval(loadGraph, 2000);
-        toggleControls();
-    };
-
+    window.onload = loadGraph;
     window.onunload = () => {
-        clearInterval(updateInterval);
+        if (autoUpdateInterval) {
+            clearInterval(autoUpdateInterval);
+        }
     };
 </script>

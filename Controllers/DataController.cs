@@ -43,24 +43,6 @@ public class DataController : ControllerBase
 
         return Ok(data);
     }
-    
-    [HttpGet("bydate")]
-    public async Task<IActionResult> ByDate(DateTime date, int? count = 50, CancellationToken cancellationToken = default)
-    {
-        var start = date.Date;
-        var end = start.AddDays(1);
-
-        var data = _context.SensorReadings
-                           .Where(d => d.Timestamp >= start && d.Timestamp < end)
-                           .OrderByDescending(d => d.Timestamp);
-
-        if (count > 0)
-            data = (IOrderedQueryable<SensorData>)data.Take(count.Value);
-
-        var list = await data.OrderBy(d => d.Timestamp).ToListAsync(cancellationToken);
-
-        return Ok(list);
-    }
 
     [HttpGet("bydate")]
     public async Task<IActionResult> ByDate([FromQuery] DateTime date,

@@ -45,7 +45,7 @@ public class DataController : ControllerBase
     }
     
     [HttpGet("bydate")]
-    public IActionResult ByDate(DateTime date, int count = 50)
+    public async Task<IActionResult> ByDate(DateTime date, int? count = 50, CancellationToken cancellationToken = default)
     {
         var start = date.Date;
         var end = start.AddDays(1);
@@ -55,13 +55,70 @@ public class DataController : ControllerBase
                            .OrderByDescending(d => d.Timestamp);
 
         if (count > 0)
-            data = (IOrderedQueryable<SensorData>)data.Take(count);
+            data = (IOrderedQueryable<SensorData>)data.Take(count.Value);
 
-        var list = data.OrderBy(d => d.Timestamp).ToList();
+        var list = await data.OrderBy(d => d.Timestamp).ToListAsync(cancellationToken);
 
         return Ok(list);
     }
-    
+
+    [HttpGet("bydate")]
+    public async Task<IActionResult> ByDate([FromQuery] DateTime date,
+                                            [FromQuery] int interval = 5,
+                                            CancellationToken cancellationToken = default)
+    {
+        date = date.Date;
+
+        var endDate = date.AddDays(1);
+
+        var query = _context.SensorReadings
+                            .Where(d => d.Timestamp >= date && d.Timestamp < endDate)
+                            .OrderBy(d => d.Timestamp);
+
+        var data = await query
+                        .GroupBy(d => new
+                         {
+                             Timestamp = DateTime.SpecifyKind(new DateTime(d.Timestamp.Year,
+                                                                           d.Timestamp.Month,
+                                                                           d.Timestamp.Day,
+                                                                           d.Timestamp.Hour,
+                                                                           d.Timestamp.Minute -
+                                                                           (d.Timestamp.Minute % interval),
+                                                                           0),
+                                                              DateTimeKind.Utc)
+                         })
+                        .Select(g => new
+                         {
+                             Timestamp = g.Key.Timestamp,
+                             Temperature = g.Average(x => x.Temperature),
+                             Humidity = g.Average(x => x.Humidity)
+                         })
+                        .ToListAsync(cancellationToken);
+
+        return Ok(data);
+    }
+
+    [HttpGet("byrange")]
+    public async Task<IActionResult> ByRange([FromQuery] DateTime startDateTime,
+                                             [FromQuery] DateTime endDateTime,
+                                             CancellationToken cancellationToken = default)
+    {
+        startDateTime = DateTime.SpecifyKind(startDateTime, DateTimeKind.Utc);
+        endDateTime = DateTime.SpecifyKind(endDateTime, DateTimeKind.Utc);
+
+        if (startDateTime >= endDateTime)
+        {
+            return BadRequest("End date must be after start date");
+        }
+
+        var data = await _context.SensorReadings
+                                 .Where(d => d.Timestamp >= startDateTime && d.Timestamp <= endDateTime)
+                                 .OrderBy(d => d.Timestamp)
+                                 .ToListAsync(cancellationToken);
+
+        return Ok(data);
+    }
+
     [HttpGet("all")]
     public async Task<IActionResult> All()
     {

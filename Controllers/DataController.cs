@@ -33,33 +33,65 @@ public class DataController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetSensorData(DateTime? from = null, DateTime? to = null, int? minutes = null,
-                                                   CancellationToken cancellationToken = default)
+    public async Task<IActionResult> GetAggregatedData(string period = "hour", DateTime? from = null, DateTime? to = null)
     {
-        var now = DateTime.Now;
-        IQueryable<SensorData> query = _context.SensorReadings;
+        var query = _context.SensorReadings.AsQueryable();
 
-        if (minutes.HasValue)
-        {
-            var since = now.AddMinutes(-minutes.Value);
-            query = query.Where(d => d.Timestamp >= since);
-        }
-        else if (from.HasValue && to.HasValue)
-        {
+        if (from.HasValue && to.HasValue)
             query = query.Where(d => d.Timestamp >= from && d.Timestamp <= to);
-        }
 
-        var data = await query
-                        .OrderBy(d => d.Timestamp)
-                        .Take(1000)
-                        .Select(d => new
-                         {
-                             timestamp = d.Timestamp,
-                             temperature = d.Temperature,
-                             humidity = d.Humidity
-                         })
-                        .ToListAsync(cancellationToken);
+        data;
+
+        switch (period)
+        {
+            case "day":
+                data = await query.GroupBy(d => d.Timestamp.Date)
+                                  .Select(g => new
+                                   {
+                                       timestamp = g.Key,
+                                       temperature = g.Average(d => d.Temperature),
+                                       humidity = g.Average(d => d.Humidity)
+                                   })
+                                  .OrderBy(d => d.timestamp)
+                                  .ToListAsync();
+
+            break;
+
+            case "week":
+                data = await query
+                            .GroupBy(d =>
+                                         System.Globalization.CultureInfo.InvariantCulture.Calendar
+                                               .GetWeekOfYear(d.Timestamp,
+                                                              System.Globalization.CalendarWeekRule.FirstFourDayWeek,
+                                                              DayOfWeek.Monday))
+                            .Select(g => new
+                             {
+                                 timestamp = $"Неделя {g.Key}",
+                                 temperature = g.Average(d => d.Temperature),
+                                 humidity = g.Average(d => d.Humidity)
+                             })
+                            .OrderBy(d => d.timestamp)
+                            .ToListAsync();
+
+            break;
+
+            default:
+                data = await query
+                            .GroupBy(d => new DateTime(d.Timestamp.Year, d.Timestamp.Month, d.Timestamp.Day,
+                                                       d.Timestamp.Hour, 0, 0))
+                            .Select(g => new
+                             {
+                                 timestamp = g.Key,
+                                 temperature = g.Average(d => d.Temperature),
+                                 humidity = g.Average(d => d.Humidity)
+                             })
+                            .OrderBy(d => d.timestamp)
+                            .ToListAsync();
+
+            break;
+        }
 
         return Ok(data);
     }
+
 }

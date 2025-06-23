@@ -29,15 +29,15 @@ public class DataController : ControllerBase
         
         _context.SensorReadings.Add(sensorDate);
         await _context.SaveChangesAsync();
-        return Ok(new { status = "saved" });
+        return Ok();
     }
     
     [HttpGet]
-    public async Task<IActionResult> GetData(
-        [FromQuery] DateTime start,
-        [FromQuery] DateTime end,
-        [FromQuery] int interval = 0,
-        CancellationToken cancellationToken = default)
+    [HttpGet]
+    public async Task<IActionResult> GetData([FromQuery] DateTime start,
+                                             [FromQuery] DateTime end,
+                                             [FromQuery] int interval = 0,
+                                             CancellationToken cancellationToken = default)
     {
         // Ensure UTC kind
         start = DateTime.SpecifyKind(start, DateTimeKind.Utc);
@@ -53,12 +53,16 @@ public class DataController : ControllerBase
             return BadRequest("Интервал должен быть от 0 до 60 минут");
         }
 
-        IQueryable<object> query;
+        // Restrict range to prevent overloading
+        if ((end - start).TotalDays > 7)
+        {
+            return BadRequest("Диапазон не должен превышать 7 дней");
+        }
 
         if (interval == 0)
         {
             // Без агрегации: возвращаем все данные
-            query = _context.SensorReadings
+            var data = await _context.SensorReadings
                 .Where(d => d.Timestamp >= start && d.Timestamp <= end)
                 .Select(d => new
                 {
@@ -66,34 +70,33 @@ public class DataController : ControllerBase
                     d.Temperature,
                     d.Humidity
                 })
-                .OrderBy(d => d.Timestamp);
+                .OrderBy(d => d.Timestamp)
+                .Take(10000) // Ограничение на 10,000 записей для защиты
+                .ToListAsync(cancellationToken);
+
+            return Ok(data);
         }
         else
         {
-            // С агрегацией по интервалу
-            query = _context.SensorReadings
-                .Where(d => d.Timestamp >= start && d.Timestamp <= end)
-                .GroupBy(d => new
-                {
-                    Timestamp = new DateTime(
-                        d.Timestamp.Year,
-                        d.Timestamp.Month,
-                        d.Timestamp.Day,
-                        d.Timestamp.Hour,
-                        (d.Timestamp.Minute / interval) * interval,
-                        0,
-                        DateTimeKind.Utc)
-                })
-                .Select(g => new
-                {
-                    Timestamp = g.Key.Timestamp,
-                    Temperature = g.Average(x => x.Temperature),
-                    Humidity = g.Average(x => x.Humidity)
-                })
-                .OrderBy(g => g.Timestamp);
-        }
+            // Агрегация по интервалу с использованием raw SQL
+            var query = @"
+                SELECT 
+                    strftime('%Y-%m-%d %H:%M:00', Timestamp, 'start of minute', 
+                             '-' || (strftime('%M', Timestamp) % @p0) || ' minutes') AS Timestamp,
+                    AVG(Temperature) AS Temperature,
+                    AVG(Humidity) AS Humidity
+                FROM SensorReadings
+                WHERE Timestamp >= @p1 AND Timestamp <= @p2
+                GROUP BY 
+                    strftime('%Y-%m-%d %H:%M:00', Timestamp, 'start of minute', 
+                             '-' || (strftime('%M', Timestamp) % @p0) || ' minutes')
+                ORDER BY Timestamp";
 
-        var data = await query.ToListAsync(cancellationToken);
-        return Ok(data);
+            var data = await _context.Database
+                .SqlQueryRaw<SensorData>(query, interval, start, end)
+                .ToListAsync(cancellationToken);
+
+            return Ok(data);
+        }
     }
 }
